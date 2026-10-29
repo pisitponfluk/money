@@ -1,7 +1,7 @@
 /* Service worker: keeps the app itself on the phone so it opens instantly and offline.
    Money data never goes through here — the page talks to Apps Script directly and keeps
    its own copy and unsent queue. Bump VERSION whenever any file below changes. */
-const VERSION = "v2.0.1";
+const VERSION = "v2.0.3";
 const SHELL = ["./", "index.html", "manifest.webmanifest",
   "icon-192.png", "icon-512.png", "maskable-512.png", "apple-touch-icon.png"];
 
