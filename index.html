@@ -275,6 +275,13 @@ h3{font-family:var(--display);font-size:15px;font-weight:600;margin:4px 0 0}
 .recadd{display:grid;grid-template-columns:minmax(0,1fr) 100px;gap:8px}
 .recadd select{grid-column:1}
 .recrow{display:flex;align-items:center;gap:10px;padding:6px 0}
+.paytog{display:flex;align-items:center;gap:10px;width:100%;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:11px 14px;font-size:15px;text-align:left}
+.paytog .box{width:20px;height:20px;border-radius:6px;border:2px solid var(--muted);display:grid;place-items:center;font-size:13px;flex:none}
+.paytog small{display:block;color:var(--muted);font-size:12.5px}
+.paytog[aria-pressed="true"]{border-color:var(--accent)}
+.paytog[aria-pressed="true"] .box{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.cardtag{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:999px;background:var(--out-soft);color:var(--out);margin-right:6px;vertical-align:1px}
+.payrow{display:flex;align-items:center;gap:10px;padding:4px 0}.payrow .mid{flex:1;min-width:0}.payrow.past{opacity:.55}
 .recrow .mid{flex:1;min-width:0}
 select.field{appearance:auto}
 #catRows,#recurRows{display:flex;flex-direction:column;gap:8px}
@@ -354,7 +361,11 @@ select.field{appearance:auto}
       <div><div class="lbl" id="balLbl">คงเหลือเดือนนี้</div><div class="bal num" id="bal">฿0</div><div class="lbl" id="perDay" hidden></div></div>
       <div class="row">
         <div class="cell"><span class="lbl">รายรับ</span><b class="num" id="sumIn">฿0</b></div>
-        <div class="cell"><span class="lbl">รายจ่าย</span><b class="num" id="sumOut">฿0</b></div>
+        <div class="cell"><span class="lbl" id="outLbl">รายจ่าย</span><b class="num" id="sumOut">฿0</b></div>
+      </div>
+      <div class="row" id="cardRow" hidden>
+        <div class="cell"><span class="lbl" id="carryLbl">หักค่าบัตรรอบก่อน</span><b class="num" id="sumCarry">฿0</b></div>
+        <div class="cell"><span class="lbl" id="cardLbl">💳 รอหักรอบหน้า</span><b class="num" id="sumCard">฿0</b></div>
       </div>
     </section>
     <section class="card" id="recurCard" hidden>
@@ -437,6 +448,7 @@ select.field{appearance:auto}
       <label><div class="flabel">วันที่</div><input class="field" type="date" id="date"></label>
       <label><div class="flabel">บันทึกช่วยจำ</div><input class="field" id="note" placeholder="เช่น ข้าวกลางวัน"></label>
     </div>
+    <button type="button" class="paytog" id="payCard" aria-pressed="false"><span class="box" aria-hidden="true"></span><span>💳 จ่ายด้วยบัตรเครดิต<small>ไม่หักจากรอบนี้ ยกไปหักตอนเงินเดือนรอบหน้า</small></span></button>
     <p class="err" id="err"></p>
     <div class="actions">
       <button type="button" class="del" id="del" hidden>ลบ</button>
@@ -524,6 +536,15 @@ select.field{appearance:auto}
     <section class="set">
       <h3>สีของแอป</h3>
       <div class="swatches" id="swatches"></div>
+    </section>
+    <section class="set">
+      <h3>วันเงินเดือนออก</h3>
+      <p class="hint">ใส่วันที่เงินเดือนจะเข้าล่วงหน้า (ดูจากปฏิทินจ่ายเงินเดือนของกรมบัญชีกลาง) แต่ละรอบนับจากวันนี้ถึงวันก่อนเงินเดือนครั้งถัดไป · เดือนไหนบันทึกรายรับหมวด “เงินเดือน” แล้ว แอปใช้วันที่บันทึกจริง</p>
+      <div id="payRows"></div>
+      <form class="addrow" id="payAdd" autocomplete="off">
+        <input class="field" type="date" id="payDate" aria-label="วันเงินเดือนออก">
+        <button type="submit" class="mini">เพิ่ม</button>
+      </form>
     </section>
     <section class="set">
       <h3>หมวดหมู่และงบประมาณต่อรอบ</h3>
@@ -783,8 +804,14 @@ const dim=(y,m)=>new Date(y,m+1,0).getDate();
 const addDays=(s,n)=>{const x=new Date(s+"T00:00:00");x.setDate(x.getDate()+n);return ds(x.getFullYear(),x.getMonth(),x.getDate())};
 // salary entries from the 15th onward count as "this month's pay"
 function salaryDates(){return txs.filter(t=>t.type==="in"&&t.cat===SALARY&&+t.date.slice(8,10)>=15).map(t=>t.date).sort()}
-function salaryIn(y,m){const k=ds(y,m,1).slice(0,7);return salaryDates().find(d=>d.startsWith(k))||null}
-function payDay(){const a=salaryDates();return a.length?+a[a.length-1].slice(8,10):0}
+// pay dates set ahead of time in settings; a salary actually recorded in that month wins
+function planDates(){return (prefs.payDates||[]).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort()}
+function salaryIn(y,m){const k=ds(y,m,1).slice(0,7);return salaryDates().find(d=>d.startsWith(k))||planDates().find(d=>d.startsWith(k))||null}
+function payDay(){const a=salaryDates().length?salaryDates():planDates();return a.length?+a[a.length-1].slice(8,10):0}
+const prevOf=(y,m)=>m?{y,m:m-1}:{y:y-1,m:11};
+/* credit card: spending counts in its category on the day it was made, but the money leaves at the next pay day */
+const isCard=t=>t.type==="out"&&t.pay==="card";
+function cardSum(r){return txs.filter(t=>isCard(t)&&t.date>=r.s&&t.date<=r.e).reduce((a,t)=>a+t.amount,0)}
 function cycleOn(){return mode==="cycle"&&payDay()>0}
 // returns {s,e,est}: first and last date of the period labelled by month (y,m); est = end is a guess
 function range(y,m){
@@ -813,16 +840,21 @@ function renderFlow(){
   head.append(sm);
   $("balLbl").textContent=cyc?(now?"คงเหลือรอบนี้":"คงเหลือรอบนั้น"):(now?"คงเหลือเดือนนี้":"คงเหลือเดือนนั้น");
   const inMonth=txs.filter(t=>t.date>=r.s&&t.date<=r.e);
-  let si=0,so=0;inMonth.forEach(t=>t.type==="in"?si+=t.amount:so+=t.amount);
+  let si=0,so=0,sc=0;inMonth.forEach(t=>t.type==="in"?si+=t.amount:isCard(t)?sc+=t.amount:so+=t.amount);
+  const pp=prevOf(view.y,view.m),carry=cardSum(range(pp.y,pp.m)),left0=si-so-carry,u=cyc?"รอบ":"เดือน";
   $("sumIn").textContent=fmt(si);$("sumOut").textContent=fmt(so);
-  $("bal").textContent=(si-so<0?"−":"")+fmt(Math.abs(si-so));
+  $("outLbl").textContent=sc||carry?"รายจ่าย (เงินสด/โอน)":"รายจ่าย";
+  $("cardRow").hidden=!(sc||carry);
+  $("carryLbl").textContent="หักค่าบัตร"+u+"ก่อน";$("sumCarry").textContent=(carry?"−":"")+fmt(carry);
+  $("cardLbl").textContent="💳 รอหัก"+u+"หน้า";$("sumCard").textContent=fmt(sc);
+  $("bal").textContent=(left0<0?"−":"")+fmt(Math.abs(left0));
   const pd=$("perDay"),left=Math.round((new Date(r.e+"T00:00:00")-new Date(todayStr()+"T00:00:00"))/864e5)+1;
   const unpaid=now?recurDue(r).filter(x=>!x.paid).reduce((a,x)=>a+x.amount,0):0;
   pd.hidden=!(now&&left>0);
-  if(now&&left>0){const free=si-so-unpaid;pd.textContent="เหลืออีก "+left+" วัน"+(free>0?" · ใช้ได้เฉลี่ยวันละ "+fmt(Math.floor(free/left))+(unpaid?" (หักรายการประจำที่ยังไม่จ่ายแล้ว)":""):"")}
+  if(now&&left>0){const free=left0-unpaid;pd.textContent="เหลืออีก "+left+" วัน"+(free>0?" · ใช้ได้เฉลี่ยวันละ "+fmt(Math.floor(free/left))+(unpaid?" (หักรายการประจำที่ยังไม่จ่ายแล้ว)":""):"")}
   renderRecur(r,now);
 
-  renderBars(inMonth,so);
+  renderBars(inMonth,so+sc);
 
   const q=searchOn?$("q").value.trim():"";
   renderTxList(q?searchTx(q):inMonth,!!q);
@@ -843,7 +875,8 @@ function renderTxList(items0,searching){
       b.innerHTML='<div class="dot '+t.type+'"></div><div class="mid"><div class="cat"></div><div class="note"></div></div><div class="amt num '+t.type+'">'+(t.type==="in"?"+":"−")+fmt(t.amount)+'</div>';
       b.querySelector(".dot").textContent=(t.cat||"?").charAt(0);
       b.querySelector(".cat").textContent=t.cat||"";
-      b.querySelector(".note").textContent=t.note||"";
+      const ne=b.querySelector(".note");ne.textContent=t.note||"";
+      if(isCard(t)){const c=document.createElement("span");c.className="cardtag";c.textContent="💳 บัตร";ne.prepend(c)}
       b.onclick=()=>openSheet(t);g.appendChild(b)});
     list.appendChild(g)});
 }
@@ -904,7 +937,7 @@ function searchTx(q){
 $("searchBtn").onclick=()=>{searchOn=!searchOn;$("searchBox").hidden=!searchOn;if(searchOn){$("q").value="";setTimeout(()=>$("q").focus(),30);ensureFrom(firstDate||"2000-01-01")}renderFlow()};
 let qT;$("q").addEventListener("input",()=>{clearTimeout(qT);qT=setTimeout(renderFlow,150)});
 
-$("prev").onclick=()=>{userNav=true;view.m--;if(view.m<0){view.m=11;view.y--}renderFlow();ensureFrom(range(view.y,view.m).s)};
+$("prev").onclick=()=>{userNav=true;view.m--;if(view.m<0){view.m=11;view.y--}renderFlow();const pp=prevOf(view.y,view.m);ensureFrom(range(pp.y,pp.m).s)};
 $("next").onclick=()=>{userNav=true;view.m++;if(view.m>11){view.m=0;view.y++}renderFlow()};
 
 /* ---------- assets render ---------- */
@@ -994,27 +1027,29 @@ const saveErr=e=>e&&e.code==="quota_exceeded"?"พื้นที่เก็บ
 /* ---------- transaction sheet ---------- */
 function drawForm(){
   $("tOut").setAttribute("aria-pressed",form.type==="out");$("tIn").setAttribute("aria-pressed",form.type==="in");
+  const pc=$("payCard");pc.hidden=form.type!=="out";pc.setAttribute("aria-pressed",!!form.card);pc.querySelector(".box").textContent=form.card?"✓":"";
   const cg=$("catGrid");cg.innerHTML="";let list=cats()[form.type];if(form.cat&&!list.includes(form.cat))list=list.concat([form.cat]);list.forEach(c=>cg.appendChild(chip(c,c===form.cat,()=>{form.cat=c;drawForm()})));
 }
 function setType(t){if(form.type===t)return;form.type=t;form.cat=cats()[t][0];drawForm()}
+$("payCard").onclick=()=>{form.card=!form.card;drawForm()};
 $("tOut").onclick=()=>setType("out");$("tIn").onclick=()=>setType("in");
 function openSheet(t){
   $("err").textContent="";resetDel("del");
-  if(t){form={type:t.type,cat:t.cat,editId:t.id};$("amount").value=String(t.amount);$("date").value=t.date;$("note").value=t.note||"";$("sheetTitle").textContent="แก้ไขรายการ";$("del").hidden=false}
-  else{form={type:form.type,cat:cats()[form.type].includes(form.cat)?form.cat:cats()[form.type][0],editId:null};$("amount").value="";
+  if(t){form={type:t.type,cat:t.cat,editId:t.id,card:isCard(t)};$("amount").value=String(t.amount);$("date").value=t.date;$("note").value=t.note||"";$("sheetTitle").textContent="แก้ไขรายการ";$("del").hidden=false}
+  else{form={type:form.type,cat:cats()[form.type].includes(form.cat)?form.cat:cats()[form.type][0],editId:null,card:false};$("amount").value="";
     $("date").value=isThisMonth()?todayStr():range(view.y,view.m).s;$("note").value="";$("sheetTitle").textContent="บันทึกรายการใหม่";$("del").hidden=true}
   drawForm();drawQuick(!t);show($("sheet"),t?null:"amount");
 }
 /* quick add: the expenses typed most often in the last 90 days, one tap to record */
 function favorites(){
   const since=addDays(todayStr(),-90),cnt={};
-  txs.filter(t=>t.type==="out"&&t.date>=since).forEach(t=>{const k=t.cat+"|"+t.amount+"|"+(t.note||"");(cnt[k]=cnt[k]||{n:0,t}).n++});
+  txs.filter(t=>t.type==="out"&&t.date>=since).forEach(t=>{const k=t.cat+"|"+t.amount+"|"+(t.note||"")+"|"+(t.pay||"");(cnt[k]=cnt[k]||{n:0,t}).n++});
   return Object.values(cnt).filter(x=>x.n>=2).sort((a,b)=>b.n-a.n).slice(0,8).map(x=>x.t);
 }
 function drawQuick(isNew){
   const f=isNew?favorites():[];$("quickBox").hidden=!f.length;const box=$("quick");box.innerHTML="";
   f.forEach(x=>box.appendChild(chip((x.note||x.cat)+" "+fmt(x.amount),false,()=>{
-    const t={id:newId("t"),type:"out",amount:x.amount,cat:x.cat,date:$("date").value||todayStr(),note:x.note||"",createdAt:Date.now()};
+    const t={id:newId("t"),type:"out",amount:x.amount,cat:x.cat,date:$("date").value||todayStr(),note:x.note||"",createdAt:Date.now()};if(x.pay==="card")t.pay="card";
     txStore.save(t);closeSheet();toast("บันทึก "+(x.note||x.cat)+" "+fmt(x.amount)+" แล้ว",()=>txStore.remove(t.id))})));
 }
 $("form").addEventListener("submit",async e=>{
@@ -1026,6 +1061,7 @@ $("form").addEventListener("submit",async e=>{
   const old=form.editId?txs.find(x=>x.id===form.editId):null;
   const t={id:form.editId||newId("t"),type:form.type,amount:Math.round(amt*100)/100,cat:form.cat,date:$("date").value,note:$("note").value.trim(),createdAt:old&&old.createdAt||Date.now()};
   if(old&&old.rid)t.rid=old.rid;
+  if(form.type==="out"&&form.card)t.pay="card";
   $("save").disabled=true;
   try{await txStore.save(t);closeSheet();toast(form.editId?"แก้ไขแล้ว":"บันทึกแล้ว");
     const r=range(view.y,view.m);if(t.date<r.s||t.date>r.e){view=periodOf(t.date);renderFlow()}}
@@ -1395,6 +1431,14 @@ function drawSettings(){
       const p=clonePrefs();p.cats={...cats(),[catTab]:list.filter(y=>y!==c)};if(p.budgets)delete p.budgets[c];savePrefs(p);drawSettings()};
     row.appendChild(x);box.appendChild(row)});
 
+  const pb=$("payRows");pb.innerHTML="";const today=todayStr(),recent=addDays(today,-62);
+  const pl=planDates().filter(d=>d>=recent);
+  if(!pl.length)pb.innerHTML='<p class="empty-note">ยังไม่ได้ตั้ง แอปจะเดาวันสิ้นรอบจากวันเงินเดือนเดือนก่อน</p>';
+  pl.forEach(d=>{const row=document.createElement("div");row.className="payrow"+(d<today?" past":"");const x0=new Date(d+"T00:00:00");
+    row.innerHTML='<div class="mid"></div>';row.querySelector(".mid").textContent=TH_D[x0.getDay()]+" "+x0.getDate()+" "+TH_M[x0.getMonth()]+" "+(x0.getFullYear()+543)+(d<today?" · ผ่านแล้ว":"");
+    const x=document.createElement("button");x.type="button";x.className="xbtn";x.textContent="×";x.setAttribute("aria-label","ลบวันที่นี้");
+    x.onclick=()=>{const p=clonePrefs();p.payDates=(p.payDates||[]).filter(y=>y!==d);savePrefs(p);drawSettings()};
+    row.appendChild(x);pb.appendChild(row)});
   const rb=$("recurRows");rb.innerHTML="";
   (prefs.recurring||[]).forEach(r=>{const row=document.createElement("div");row.className="recrow";
     row.innerHTML='<div class="mid"><div></div><div class="sub"></div></div><b class="num"></b>';
@@ -1413,6 +1457,11 @@ $("cOut").onclick=()=>{catTab="out";drawSettings()};$("cIn").onclick=()=>{catTab
 $("catAdd").addEventListener("submit",e=>{e.preventDefault();const v=$("newCat").value.trim();if(!v)return;
   const L=cats()[catTab];if(L.includes(v)){toast("มีหมวดชื่อนี้อยู่แล้ว");return}
   const p=clonePrefs();p.cats={...cats(),[catTab]:L.concat([v])};savePrefs(p);$("newCat").value="";drawSettings()});
+$("payAdd").addEventListener("submit",e=>{e.preventDefault();const v=$("payDate").value;if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return;
+  const p=clonePrefs(),keepOld=addDays(todayStr(),-400);
+  // one pay date per month: a new date replaces that month's old one; very old dates are dropped
+  p.payDates=(p.payDates||[]).filter(d=>d.slice(0,7)!==v.slice(0,7)&&d>=keepOld).concat([v]).sort();
+  savePrefs(p);$("payDate").value="";drawSettings();toast("ตั้งวันเงินเดือนออกแล้ว")});
 $("recAdd").addEventListener("submit",e=>{e.preventDefault();const name=$("recName").value.trim(),amt=parseAmt($("recAmt").value);
   if(!name){$("recErr").textContent="ใส่ชื่อรายจ่ายประจำ";return}
   if(!(amt>0)){$("recErr").textContent="ใส่จำนวนเงินที่มากกว่า 0";return}
